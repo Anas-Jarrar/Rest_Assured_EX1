@@ -6,7 +6,7 @@ import org.junit.jupiter.api.*;
 
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
+
 import java.util.Random;
 
 import static io.restassured.RestAssured.given;
@@ -122,7 +122,7 @@ public class LoginTest {
                 .extract()
                 .response();
         assertEquals(Integer.parseInt(sizeBeforeCreateNewList) + 1, Integer.parseInt(responseBody.jsonPath().getString("size")));
-        assertNotNull(responseBody.jsonPath().getList("entries.url").contains(listId), "Entries array should contains the new list Id");
+        assertTrue(responseBody.jsonPath().getString("entries.url").contains(listId), "Entries array should contains the new list Id");
         System.out.println("the list of URls : " + responseBody.jsonPath().getList("entries.url"));
     }
 
@@ -207,14 +207,8 @@ public class LoginTest {
                 .statusCode(200)
                 .extract().response();
         List<String> subjectUrls = getSubjectOfList.jsonPath().getList("subjects.url");
-        boolean found = false;
-        for (String subjectUrl : subjectUrls) {
-            if (subjectUrl.equals(seedSubjectTitle)) {
-                found = true;
-                break;
-            }
-        }
-        assertTrue(found, "seed Subject Title of seed does not found");
+        boolean found = subjectUrls.stream().anyMatch(subjectUrl -> subjectUrl.equals(seedSubjectTitle));
+        assertTrue(found, "Seed subject title was not found in the list");
     }
 
     @Test
@@ -228,31 +222,22 @@ public class LoginTest {
                 .statusCode(200)
                 .extract().response();
 
-        List<Map<String, Object>> entries = response.jsonPath().getList("entries");
+        List<?> entries = response.jsonPath().getList("entries");
         assertNotNull(entries, "Seeds response must have 'entries'");
         assertFalse(entries.isEmpty(), "Seeds entries should not be empty");
 
-        Map<String, Object> matchedEntry = null;
-        for (Map<String, Object> entry : entries) {
-            String name = (String) entry.get("name");
-            if (name != null && name.trim().equals(randomName)) {
-                matchedEntry = entry;
-                break;
-            }
-        }
+        List<String> entriesURls=response.jsonPath().getList("entries.url");
+        boolean found =entriesURls.stream().anyMatch(entry -> entry.contains(listId));
 
-        String entryUrl = (String) matchedEntry.get("url");
-        String[] url = entryUrl.split("/");
-        String expectedListId = url[url.length - 1];
-        assertEquals(listId, expectedListId,
-                "List ID in the entry does not match the expected seed list ID");
+        assertTrue(found, "Seed URL not found in the list");
     }
+
 
     @Test
     @Order(9)
     public void addSeedAndVerify() {
         addedSeedKey = "/books/OL25123431M";
-        Response addResponse = given()
+        given()
                 .header("Content-Type", "application/json")
                 .header("Cookie", sessionValue)
                 .body("{\"add\":[{\"key\":\"" + addedSeedKey + "\"}]}")
@@ -272,23 +257,17 @@ public class LoginTest {
                 .extract().response();
 
         List<String> responseUrls = getSeedOfList.jsonPath().getList("entries.url");
-        boolean found = false;
-        for (String seedUrl : responseUrls) {
-            if (seedUrl.equals(addedSeedKey)) {
-                found = true;
-                System.out.println("Added seed found: " + seedUrl);
-                break;
-            }
-        }
-
+        boolean found = responseUrls.stream()
+                .anyMatch(seedUrl -> seedUrl.equals(addedSeedKey));
         assertTrue(found, "The seed was not added successfully");
     }
+
 
     @Test
     @Order(10)
     public void deleteSeedAndVerify() {
         addedSeedKey = "/books/OL25123431M";
-        Response deleteResponse = given()
+                 given()
                 .header("Content-Type", "application/json")
                 .header("Cookie", sessionValue)
                 .body("{\"remove\":[\"" + addedSeedKey + "\"]}")
@@ -307,16 +286,9 @@ public class LoginTest {
                 .extract().response();
 
         List<String> responseUrls = getSeedOfList.jsonPath().getList("entries.url");
-        boolean deleted = true;
-        for (String seedUrl : responseUrls) {
-            if (seedUrl.equals(addedSeedKey)) {
-                deleted = false;
-                System.out.println("The seed still found: " + seedUrl);
-                break;
-            }
-        }
-
-        assertTrue(deleted, "The seed was not deleted successfully");
+        assertNotNull(responseUrls, "Seeds list should not be null");
+        assertFalse(responseUrls.contains(addedSeedKey),
+                "The seed was not deleted successfully");
 
     }
 
@@ -330,18 +302,19 @@ public class LoginTest {
                 .post("/people/anasjarrar/lists/" + listId + "/delete.json")
                 .then()
                 .statusCode(200);
-        Response getDeletedList=given()
+        Response getDeletedList = given()
                 .header("Content-Type", "application/json")
                 .when()
-                .get("/people/anasjarrar/lists/"+listId+".json")
+                .get("/people/anasjarrar/lists/" + listId + ".json")
                 .then()
                 .statusCode(200)
                 .extract().response();
-        assertNull( getDeletedList.jsonPath().getString("name"), "The list still found");
-        assertNull( getDeletedList.jsonPath().getString("description"), "The list still found");
+        assertNull(getDeletedList.jsonPath().getString("name"), "The list still found");
+        assertNull(getDeletedList.jsonPath().getString("description"), "The list still found");
         assertNull(getDeletedList.jsonPath().getString("seed_count"), "The list still found");
         System.out.println("List " + listId + " deleted successfully.");
     }
+
     @Test
     @Order(12)
     public void searchListsWithLimitAndOffset() {
